@@ -1,58 +1,158 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Carnet de Spots — API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+The API powering **Carnet de Spots**, a personal spot-tracking app: pinning precise GPS points (parking spots, overnight spots, scouted locations) — even where no formal address exists — with a free-text note, to find and consult them on-site **without a network connection**.
 
-## About Laravel
+Built with Laravel 13 (PHP 8.3), pure JSON REST — no Inertia.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## 1. Project context & purpose
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+A personal app (solo use in V1) for pinning precise GPS points, so they can be found and consulted on-site **without a network connection**.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Two usage phases:
 
-## Learning Laravel
+- **Preparation** (at home, stable wifi): searching for spots, adding points via the web client.
+- **On the road** (camper van, often offline): browsing/updating via mobile, with no network dependency — this API is therefore only contacted by the mobile client before departure (sync) and after regaining network (replaying queued mutations), never continuously.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+## 2. Role of this repo in the overall architecture
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+**3 separate repositories**, with this API as the single source of truth:
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+- `carnet-spots-api` (this repo, Laravel) — pure JSON REST API
+- `carnet-spots-web` (React + Vite) — HTTP client of this API, used for preparation
+- `carnet-spots-mobile` (React Native CLI, bare, Android) — HTTP client of this API (occasional sync) + local SQLite storage for offline field use
 
-## Agentic Development
+## 3. Technical decisions
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+| Topic         | Decision                                                                                                                            | Rationale                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| API style     | Pure JSON REST, **no Inertia**                                                                                                       | Avoids duplicating logic between the web and mobile clients          |
+| Auth          | **Laravel Sanctum** (token-based)                                                                                                    | Native Laravel ecosystem, sufficient for personal/multi-device use   |
+| Geo search    | **Haversine SQL** + composite `(lat, lng)` index                                                                                     | Sufficient at this scale, no need for PostGIS                        |
+| Offline tiles | This API also serves regional **`.pmtiles`** files (Protomaps) as static assets, downloaded by the mobile client before a road trip | See section 5                                                        |
 
-```bash
-composer require laravel/boost --dev
+## 4. Data schema (migrations)
 
-php artisan boost:install
+### `points`
+
+```php
+Schema::create('points', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('owner_id')->constrained('users');
+    $table->string('title')->nullable();
+    $table->decimal('latitude', 10, 7);
+    $table->decimal('longitude', 10, 7);
+    $table->text('note')->nullable();
+    $table->enum('status', ['a_tester', 'valide', 'a_eviter', 'deja_dormi'])
+          ->default('a_tester');
+    $table->timestamp('visited_at')->nullable();
+    $table->enum('visibility', ['private', 'public'])->default('private');
+    $table->timestamps();
+
+    $table->index(['latitude', 'longitude']);
+});
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+### `tags`
 
-## Contributing
+```php
+Schema::create('tags', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('owner_id')->constrained('users');
+    $table->string('name');
+    $table->timestamps();
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+    $table->unique(['owner_id', 'name']); // prevents duplicate tags per user
+});
+```
 
-## Code of Conduct
+### `point_tag` (pivot)
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```php
+Schema::create('point_tag', function (Blueprint $table) {
+    $table->foreignId('point_id')->constrained()->cascadeOnDelete();
+    $table->foreignId('tag_id')->constrained()->cascadeOnDelete();
+    $table->primary(['point_id', 'tag_id']);
+});
+```
 
-## Security Vulnerabilities
+### `photos` (V2, not urgent)
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+```php
+Schema::create('photos', function (Blueprint $table) {
+    $table->id();
+    $table->foreignId('point_id')->constrained()->cascadeOnDelete();
+    $table->string('path');
+    $table->timestamps();
+});
+```
 
-## License
+**Why `owner_id` and `visibility` exist from V1** (even for solo use): this allows opening the app to other users later without a destructive migration — just additive changes (Laravel policies, moderation on public points, rate limiting).
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## 5. The API's role in offline support (tiles + data)
+
+The app must work **without a network in the field**. This API is only involved outside of field use:
+
+### 5.1 Map tiles — Protomaps / `.pmtiles`
+
+- The official OSM tile server forbids bulk/automated downloading for offline use. OSM remains the data source; only the distribution infrastructure changes.
+- A regional **`.pmtiles`** file is generated (a targeted extract of the road-trip area, not the whole planet) and **served as a static file by this API**.
+- The mobile client downloads this file before departure (over wifi) and reads it locally via `file://` — the API is no longer needed for maps once in the field.
+- ODbL attribution (`© OpenStreetMap contributors`) is handled client-side (MapLibre styles).
+
+### 5.2 Application data — sync + mutation replay
+
+- **Downward sync**: endpoint(s) letting the mobile client fetch the relevant points (road-trip area) before departure.
+- **Mutation replay**: the mobile client queues offline changes (status, note) locally; this API must expose the endpoints needed to replay them once network is regained (likely: standard CRUD endpoints on `points`, with timestamp-based conflict resolution — a *last-write-wins* strategy is planned given the solo use case, to be documented precisely before implementation).
+
+## 6. V1 roadmap for this repo
+
+1. Migrations + Eloquent models (`Point`, `Tag`, `User`)
+2. API routes: CRUD `points`, CRUD `tags`, "points near a position" endpoint (Haversine)
+3. Sanctum auth (even solo, a single account)
+4. Sync endpoint(s) for mobile (batch fetch by area) + mutation replay endpoints
+5. Static file service for regional `.pmtiles`
+
+## 7. Out of scope for V1
+
+- Multi-user registration, cross-user access policies, moderation of public points
+- Landing page / blog (will be a separate 4th repo, Next.js, if the need is confirmed — independent of this API but a consumer of it)
+- Photos attached to points
+- Notifications ("point nearby")
+
+## 8. Current implementation status
+
+The API is at the bootstrap stage — infrastructure is in place, domain features are not yet implemented.
+
+**Done:**
+
+- Laravel 13 skeleton, PHP 8.3, Pest 4 (functional syntax, `RefreshDatabase` on feature tests)
+- Laravel Boost installed (AI-agent guidelines, skills, MCP server for this codebase)
+- Two project-specific AI agents committed to the repo (`.claude/agents/`):
+  - `pest-tester` — writes and runs Pest tests following this project's domain (ownership scoping, geo search, sync/replay)
+  - `laravel-code-reviewer` — reviews security/ownership, correctness, performance, and Laravel conventions before merge
+- Local dev environment: Laravel Sail (Docker), reverse-proxied through a local Traefik instance, SQLite as the local database driver (no DB container needed)
+
+**Not started yet:**
+
+- `points` / `tags` / `point_tag` migrations and Eloquent models
+- API routes and controllers (CRUD, nearby search)
+- Sanctum authentication
+- Sync and mutation-replay endpoints
+- `.pmtiles` static file serving
+
+## 9. Local development
+
+Requires Docker.
+
+```bash
+# Start the app (builds the image on first run)
+./vendor/bin/sail up -d
+
+# Run the test suite
+./vendor/bin/sail pest
+
+# Artisan commands
+./vendor/bin/sail artisan migrate
+```
+
+The app is reverse-proxied through a local Traefik instance at **https://carnet-spots-api.dev.localhost**.
