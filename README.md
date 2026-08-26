@@ -156,3 +156,15 @@ Requires Docker.
 ```
 
 The app is reverse-proxied through a local Traefik instance at **https://carnet-spots-api.dev.localhost**.
+
+## 10. Environments
+
+Three environments, mirroring a standard branch-per-environment workflow:
+
+| Environment | Branch    | Where it runs                          | Database                     |
+| ----------- | --------- | --------------------------------------- | ----------------------------- |
+| Development | `develop` | Local (Sail + Traefik, see above)       | SQLite                        |
+| Staging     | `staging` | Coolify                                 | MySQL (Coolify-managed)       |
+| Production  | `main`    | Coolify                                 | MySQL (Coolify-managed)       |
+
+Staging and production are built from the root `Dockerfile` (a self-contained PHP-FPM + Nginx + Supervisor image — separate from `compose.yaml`, which is Sail's local dev setup only). Coolify builds and deploys it per branch, injecting environment variables and running the container's `docker/entrypoint.sh` (`config:cache`, `route:cache`, `migrate --force`) on every deploy. No `.env` file is baked into the image — all configuration comes from environment variables set in Coolify per app.
