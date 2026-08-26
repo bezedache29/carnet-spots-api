@@ -1,0 +1,36 @@
+services:
+    laravel.test:
+        build:
+            context: './vendor/laravel/sail/runtimes/8.5'
+            dockerfile: Dockerfile
+            args:
+                WWWGROUP: '${WWWGROUP}'
+        image: 'sail-8.5/app'
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
+        ports:
+            - '${VITE_PORT:-5173}:${VITE_PORT:-5173}'
+        environment:
+            WWWUSER: '${WWWUSER}'
+            LARAVEL_SAIL: 1
+            XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
+            XDEBUG_CONFIG: '${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}'
+            IGNITION_LOCAL_SITES_PATH: '${PWD}'
+        volumes:
+            - '.:/var/www/html'
+            - '/mnt/e/DEV/infrastructure/traefik/certs:/etc/traefik/certs:ro'
+        networks:
+            - sail
+            - traefik-network
+        labels:
+            - 'traefik.enable=true'
+            - 'traefik.http.routers.carnet-spots-api.rule=Host(`${APP_DOMAIN}`)'
+            - 'traefik.http.routers.carnet-spots-api.entrypoints=websecure'
+            - 'traefik.http.routers.carnet-spots-api.tls=true'
+            - 'traefik.http.services.carnet-spots-api.loadbalancer.server.port=80'
+            - 'traefik.docker.network=traefik-network'
+networks:
+    sail:
+        driver: bridge
+    traefik-network:
+        external: true
