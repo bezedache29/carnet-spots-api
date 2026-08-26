@@ -161,14 +161,14 @@ The app is reverse-proxied through a local Traefik instance at **https://carnet-
 
 Three environments, mirroring a standard branch-per-environment workflow:
 
-| Environment | Branch    | Where it runs                          | Database |
-| ----------- | --------- | --------------------------------------- | -------- |
-| Development | `develop` | Local (Sail + Traefik, see above)       | SQLite   |
-| Staging     | `staging` | Coolify                                 | SQLite   |
-| Production  | `main`    | Coolify                                 | SQLite   |
+| Environment | Branch    | Where it runs                          | Database                |
+| ----------- | --------- | --------------------------------------- | ------------------------ |
+| Development | `develop` | Local (Sail + Traefik, see above)       | SQLite                   |
+| Staging     | `staging` | Coolify                                 | MySQL (Coolify-managed)  |
+| Production  | `main`    | Coolify                                 | MySQL (Coolify-managed)  |
 
-SQLite everywhere, on purpose: this is a solo-use app with a modest data volume (see section 1), so a managed database service would add operational weight (a service to provision, credentials to manage per environment) without a matching benefit. Kept consistent with the rest of this document rather than the heavier-weight pattern used on other, higher-traffic projects.
+Development stays on SQLite for speed and zero setup (no service to run locally). Staging and production use a managed MySQL instance instead: unlike SQLite (a single file with no network protocol), MySQL supports remote client access (TablePlus, DBeaver, etc.) over a secure channel — needed to inspect live data — and avoids the single-writer bottleneck of a file-based database if the app ever opens up beyond solo use.
 
 Staging and production are built from the root `Dockerfile` (a self-contained PHP-FPM + Nginx + Supervisor image — separate from `compose.yaml`, which is Sail's local dev setup only). Coolify builds and deploys it per branch, injecting environment variables and running the container's `docker/entrypoint.sh` (`config:cache`, `route:cache`, `migrate --force`) on every deploy. No `.env` file is baked into the image — all configuration comes from environment variables set in Coolify per app.
 
-**Important:** the SQLite file lives inside the container's filesystem, which is ephemeral. Each staging/production app in Coolify needs a **persistent volume** mounted at `/var/www/html/database`, otherwise the database resets on every deploy.
+**Connecting to staging/production data from a local client:** never expose MySQL's port (3306) directly to the internet. Use Coolify's built-in secure database proxy, or an SSH tunnel to the server, and point a local GUI client (TablePlus, DBeaver, ...) at `localhost` through that tunnel.
