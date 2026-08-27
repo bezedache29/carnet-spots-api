@@ -130,7 +130,7 @@ The API is at the bootstrap stage — infrastructure is in place, domain feature
 - Two project-specific AI agents committed to the repo (`.claude/agents/`):
   - `pest-tester` — writes and runs Pest tests following this project's domain (ownership scoping, geo search, sync/replay)
   - `laravel-code-reviewer` — reviews security/ownership, correctness, performance, and Laravel conventions before merge
-- Local dev environment: Laravel Sail (Docker), reverse-proxied through a local Traefik instance, SQLite as the local database driver (no DB container needed)
+- Local dev environment: Laravel Sail (Docker), reverse-proxied through a local Traefik instance, MySQL as the local database (Sail's `mysql` service)
 
 **Not started yet:**
 
@@ -163,11 +163,11 @@ Three environments, mirroring a standard branch-per-environment workflow:
 
 | Environment | Branch    | Where it runs                          | Database                |
 | ----------- | --------- | --------------------------------------- | ------------------------ |
-| Development | `develop` | Local (Sail + Traefik, see above)       | SQLite                   |
+| Development | `develop` | Local (Sail + Traefik, see above)       | MySQL (Sail `mysql` service) |
 | Staging     | `staging` | Coolify                                 | MySQL (Coolify-managed)  |
 | Production  | `main`    | Coolify                                 | MySQL (Coolify-managed)  |
 
-Development stays on SQLite for speed and zero setup (no service to run locally). Staging and production use a managed MySQL instance instead: unlike SQLite (a single file with no network protocol), MySQL supports remote client access (TablePlus, DBeaver, etc.) over a secure channel — needed to inspect live data — and avoids the single-writer bottleneck of a file-based database if the app ever opens up beyond solo use.
+MySQL everywhere: unlike SQLite (a single file with no network protocol), MySQL supports remote client access (TablePlus, DBeaver, etc.) over a secure channel — needed to inspect live data — and avoids the single-writer bottleneck of a file-based database if the app ever opens up beyond solo use. Keeping dev on the same engine as staging/production also avoids SQLite-vs-MySQL behavior drift (e.g. migrations, strictness) between environments.
 
 Staging and production are built from the root `Dockerfile` (a self-contained PHP-FPM + Nginx + Supervisor image — separate from `compose.yaml`, which is Sail's local dev setup only). Coolify builds and deploys it per branch, injecting environment variables and running the container's `docker/entrypoint.sh` (`config:cache`, `route:cache`, `migrate --force`) on every deploy. No `.env` file is baked into the image — all configuration comes from environment variables set in Coolify per app.
 
