@@ -165,9 +165,9 @@ Three environments, mirroring a standard branch-per-environment workflow:
 
 | Environment | Branch    | Where it runs                          | Database                |
 | ----------- | --------- | --------------------------------------- | ------------------------ |
-| Development | `develop` | Local (Sail + Traefik, see above)       | MySQL (Sail `mysql` service) |
+| Development | `dev`     | Local (Sail + Traefik, see above)       | MySQL (Sail `mysql` service) |
 | Staging     | `staging` | Coolify                                 | MySQL (Coolify-managed)  |
-| Production  | `main`    | Coolify                                 | MySQL (Coolify-managed)  |
+| Production  | `prod`    | Coolify                                 | MySQL (Coolify-managed)  |
 
 MySQL everywhere: unlike SQLite (a single file with no network protocol), MySQL supports remote client access (TablePlus, DBeaver, etc.) over a secure channel — needed to inspect live data — and avoids the single-writer bottleneck of a file-based database if the app ever opens up beyond solo use. Keeping dev on the same engine as staging/production also avoids SQLite-vs-MySQL behavior drift (e.g. migrations, strictness) between environments.
 
