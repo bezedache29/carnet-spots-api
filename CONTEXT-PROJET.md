@@ -40,8 +40,8 @@ Schema::create('points', function (Blueprint $table) {
     $table->decimal('latitude', 10, 7);
     $table->decimal('longitude', 10, 7);
     $table->text('note')->nullable();
-    $table->enum('status', ['a_tester', 'valide', 'a_eviter', 'deja_dormi'])
-          ->default('a_tester');
+    $table->enum('status', ['to_test', 'validated', 'to_avoid', 'already_slept'])
+          ->default('to_test');
     $table->timestamp('visited_at')->nullable();
     $table->enum('visibility', ['private', 'public'])->default('private');
     $table->timestamps();

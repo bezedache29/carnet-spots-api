@@ -120,7 +120,7 @@ it('rejects an invalid visibility value at the database level', function () {
     ]);
 })->throws(QueryException::class);
 
-it('defaults status to a_tester and visibility to private at the database level', function () {
+it('defaults status to to_test and visibility to private at the database level', function () {
     $owner = User::factory()->create();
 
     $id = DB::table('points')->insertGetId([
@@ -133,7 +133,7 @@ it('defaults status to a_tester and visibility to private at the database level'
 
     $point = Point::find($id);
 
-    expect($point->status)->toBe(PointStatus::ATester)
+    expect($point->status)->toBe(PointStatus::ToTest)
         ->and($point->visibility)->toBe(PointVisibility::Private);
 });
 
@@ -142,10 +142,10 @@ it('accepts each valid status value', function (PointStatus $status) {
 
     expect($point->fresh()->status)->toBe($status);
 })->with([
-    'a_tester' => PointStatus::ATester,
-    'valide' => PointStatus::Valide,
-    'a_eviter' => PointStatus::AEviter,
-    'deja_dormi' => PointStatus::DejaDormi,
+    'to_test' => PointStatus::ToTest,
+    'validated' => PointStatus::Validated,
+    'to_avoid' => PointStatus::ToAvoid,
+    'already_slept' => PointStatus::AlreadySlept,
 ]);
 
 it('accepts each valid visibility value', function (PointVisibility $visibility) {

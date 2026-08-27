@@ -21,7 +21,7 @@ return new class extends Migration
             $table->decimal('longitude', 10, 7);
             $table->text('note')->nullable();
             $table->enum('status', array_column(PointStatus::cases(), 'value'))
-                ->default(PointStatus::ATester->value);
+                ->default(PointStatus::ToTest->value);
             $table->timestamp('visited_at')->nullable();
             $table->enum('visibility', array_column(PointVisibility::cases(), 'value'))
                 ->default(PointVisibility::Private->value);
