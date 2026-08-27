@@ -37,7 +37,7 @@ Two usage phases:
 ```php
 Schema::create('points', function (Blueprint $table) {
     $table->id();
-    $table->foreignId('owner_id')->constrained('users');
+    $table->foreignId('owner_id')->constrained('users')->cascadeOnDelete();
     $table->string('title')->nullable();
     $table->decimal('latitude', 10, 7);
     $table->decimal('longitude', 10, 7);
@@ -48,7 +48,7 @@ Schema::create('points', function (Blueprint $table) {
     $table->enum('visibility', ['private', 'public'])->default('private');
     $table->timestamps();
 
-    $table->index(['latitude', 'longitude']);
+    $table->index(['owner_id', 'latitude', 'longitude']);
 });
 ```
 
@@ -57,7 +57,7 @@ Schema::create('points', function (Blueprint $table) {
 ```php
 Schema::create('tags', function (Blueprint $table) {
     $table->id();
-    $table->foreignId('owner_id')->constrained('users');
+    $table->foreignId('owner_id')->constrained('users')->cascadeOnDelete();
     $table->string('name');
     $table->timestamps();
 
@@ -156,6 +156,8 @@ Requires Docker.
 ```
 
 The app is reverse-proxied through a local Traefik instance at **https://carnet-spots-api.dev.localhost**.
+
+**Running tests**: the test suite runs against a real MySQL database (a separate `testing` database on the same Sail `mysql` service — see `phpunit.xml`), not SQLite. This means `./vendor/bin/sail pest` / `./vendor/bin/sail artisan test` must run **inside the Sail container** (`DB_HOST=mysql` only resolves there). The `testing` database is created automatically by `vendor/laravel/sail/database/mysql/create-testing-database.sh` on first container start — but only when the `carnet-spots-api-mysql` volume is empty. If tests fail with "Unknown database 'testing'" on an existing volume, create it manually (`./vendor/bin/sail mysql -e "CREATE DATABASE testing"`) or reset the volume with `./vendor/bin/sail down -v`.
 
 ## 10. Environments
 
