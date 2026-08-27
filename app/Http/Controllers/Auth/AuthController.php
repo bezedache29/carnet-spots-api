@@ -25,6 +25,8 @@ class AuthController extends Controller
     {
         $user = User::create($request->safe()->only(['name', 'email', 'password']));
 
+        $user->sendEmailVerificationNotification();
+
         $token = $user->createToken($request->validated('device_name'));
 
         return response()->json([
