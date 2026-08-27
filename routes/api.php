@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\EmailVerificationController;
+use App\Http\Controllers\TagController;
 use App\Http\Resources\UserResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -26,6 +27,10 @@ Route::prefix('v1')->group(function () {
             Route::post('/email/verification-notification', [EmailVerificationController::class, 'resend'])
                 ->middleware('throttle:6,1')
                 ->name('verification.send');
+        });
+
+        Route::middleware(['auth:sanctum', 'verified'])->group(function () {
+            Route::apiResource('tags', TagController::class);
         });
     });
 
