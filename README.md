@@ -114,7 +114,7 @@ The app must work **without a network in the field**. This API is only involved 
 
 ## 7. Out of scope for V1
 
-- Multi-user registration, cross-user access policies, moderation of public points
+- Cross-user access policies, moderation of public points (registration exists for convenience — creating the account(s) that use this app — but there's no multi-tenant access control yet)
 - Landing page / blog (will be a separate 4th repo, Next.js, if the need is confirmed — independent of this API but a consumer of it)
 - Photos attached to points
 - Notifications ("point nearby")
