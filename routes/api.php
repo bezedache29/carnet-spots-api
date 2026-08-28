@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\EmailVerificationController;
+use App\Http\Controllers\PointController;
 use App\Http\Controllers\TagController;
 use App\Http\Resources\UserResource;
 use Illuminate\Http\Request;
@@ -31,6 +32,7 @@ Route::prefix('v1')->group(function () {
 
         Route::middleware(['auth:sanctum', 'verified'])->group(function () {
             Route::apiResource('tags', TagController::class);
+            Route::apiResource('points', PointController::class);
         });
     });
 

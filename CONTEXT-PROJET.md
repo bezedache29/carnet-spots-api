@@ -4,7 +4,9 @@
 
 ## 1. Contexte & besoin du projet
 
-App personnelle (usage solo en V1) pour marquer des points GPS précis (parkings, spots de nuit, emplacements repérés) même sans adresse existante (ex. en pleine forêt), avec une note libre, pour les retrouver et les consulter une fois sur le terrain **sans réseau**.
+App personnelle (usage solo en V1, pour les tests) pour marquer des points GPS précis (parkings, spots de nuit, emplacements repérés) même sans adresse existante (ex. en pleine forêt), avec une note libre, pour les retrouver et les consulter une fois sur le terrain **sans réseau**.
+
+À moyen terme, l'app a vocation à s'ouvrir à d'autres utilisateurs (multi-comptes) — c'est la raison pour laquelle `owner_id` est présent dès la V1 sur `points` et `tags`, avec un scoping strict par owner (jamais de partage entre utilisateurs au sein de l'app).
 
 Deux phases d'usage :
 
@@ -73,7 +75,7 @@ Schema::create('point_tag', function (Blueprint $table) {
 });
 ```
 
-### `photos` (V2, pas urgent)
+### `photos` (post-prototype, pas urgent)
 
 ```php
 Schema::create('photos', function (Blueprint $table) {
@@ -83,6 +85,10 @@ Schema::create('photos', function (Blueprint $table) {
     $table->timestamps();
 });
 ```
+
+L'action "marquer un point comme visité" (choix du status + note libre) est prévue dès la V1, en **texte seulement** : c'est un `PATCH` standard sur `/points/{id}` (status, visited_at, note), pas d'endpoint dédié. L'ajout d'images à cette action est confirmé au planning mais reporté après le prototype (nécessite la table `photos` ci-dessus + gestion d'upload/stockage).
+
+**Partage** : aucune visibilité publique côté API (pas de route publique, pas de modération à prévoir en V1 malgré le champ `visibility`). Le seul partage envisagé passe par des canaux externes (WhatsApp et autres messageries) — modalités non figées, à définir plus tard (probablement export/génération de lien côté client, pas un endpoint public de cette API).
 
 **Pourquoi `owner_id` et `visibility` dès la V1** (même en usage solo) : permet d'ouvrir l'app à d'autres utilisateurs plus tard sans migration destructive — juste des ajouts (policies Laravel, modération sur points publics, rate limiting).
 

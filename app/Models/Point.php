@@ -18,6 +18,19 @@ class Point extends Model
     use HasFactory;
 
     /**
+     * Match the database column defaults so a freshly-created in-memory
+     * instance (e.g. right after ->create() without status/visibility in
+     * the payload) already has a valid enum value instead of null, which
+     * would otherwise crash PointResource on ->status->value.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'status' => PointStatus::ToTest->value,
+        'visibility' => PointVisibility::Private->value,
+    ];
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
