@@ -22,6 +22,7 @@ class PointResource extends JsonResource
             'visited_at' => $this->visited_at,
             'visibility' => $this->visibility->value,
             'tags' => TagResource::collection($this->whenLoaded('tags')),
+            'distance_km' => $this->whenHas('distance_km', fn ($distanceKm) => $distanceKm === null ? null : round((float) $distanceKm, 2)),
         ];
     }
 }

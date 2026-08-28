@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\NearbyPointsRequest;
 use App\Http\Requests\StorePointRequest;
 use App\Http\Requests\UpdatePointRequest;
 use App\Http\Resources\PointResource;
@@ -21,7 +22,7 @@ class PointController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('can:viewAny,'.Point::class, only: ['index']),
+            new Middleware('can:viewAny,'.Point::class, only: ['index', 'nearby']),
             new Middleware('can:create,'.Point::class, only: ['store']),
             new Middleware('can:view,point', only: ['show']),
             new Middleware('can:update,point', only: ['update']),
@@ -35,6 +36,23 @@ class PointController extends Controller implements HasMiddleware
         return PointResource::collection(
             request()->user()->points()->with('tags')->latest()->get()
         );
+    }
+
+    #[Endpoint(title: 'Find nearby points', description: 'Returns the authenticated user\'s points within `radius` km (default 20, max 20000 — effectively unbounded, e.g. large enough for a nationwide search) of `lat`/`lng`, closest first, capped at `limit` results (default 50, max 100). Each point includes a `distance_km` field.')]
+    public function nearby(NearbyPointsRequest $request): AnonymousResourceCollection
+    {
+        $lat = (float) $request->validated('lat');
+        $lng = (float) $request->validated('lng');
+        $radius = (float) $request->validated('radius', 20);
+        $limit = (int) $request->validated('limit', 50);
+
+        $points = $request->user()->points()
+            ->nearby($lat, $lng, $radius)
+            ->limit($limit)
+            ->with('tags')
+            ->get();
+
+        return PointResource::collection($points);
     }
 
     #[Endpoint(title: 'Create a point', description: 'Creates a point for the authenticated user. `tag_ids` is optional and must reference tags owned by the same user.')]

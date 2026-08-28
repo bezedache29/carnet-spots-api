@@ -32,6 +32,10 @@ Route::prefix('v1')->group(function () {
 
         Route::middleware(['auth:sanctum', 'verified'])->group(function () {
             Route::apiResource('tags', TagController::class);
+
+            // Must be registered before apiResource('points', ...), otherwise
+            // GET /points/nearby is swallowed by GET /points/{point}.
+            Route::get('/points/nearby', [PointController::class, 'nearby'])->name('points.nearby');
             Route::apiResource('points', PointController::class);
         });
     });
