@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use Dedoc\Scramble\Attributes\Endpoint;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -17,6 +18,7 @@ class EmailVerificationController extends Controller
      * `signed` middleware guarantees the link wasn't tampered with or
      * expired; the hash check below ties it to this specific user/email.
      */
+    #[Endpoint(title: 'Verify an email address', description: "Confirms a user's email via the signed link sent at registration. Unauthenticated by design — the request is validated by the link's signature and hash, not a session.")]
     public function verify(Request $request): JsonResponse
     {
         $user = User::findOrFail($request->route('id'));
@@ -34,6 +36,7 @@ class EmailVerificationController extends Controller
         return response()->json(['message' => 'Email verified successfully.']);
     }
 
+    #[Endpoint(title: 'Resend the verification email', description: 'Sends a new email verification link to the authenticated user, if not already verified.')]
     public function resend(Request $request): JsonResponse
     {
         if ($request->user()->hasVerifiedEmail()) {
