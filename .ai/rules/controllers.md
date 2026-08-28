@@ -29,3 +29,10 @@ class TagController extends Controller implements HasMiddleware
 }
 ```
 Methods without a bound model (index/create/store) reference the model class string; methods with route-model binding (show/update/destroy) reference the route parameter name. See `app/Http/Controllers/TagController.php` for the working pattern.
+
+## Name every action with a Scramble #[Endpoint] attribute
+Every controller action (index/store/show/update/destroy, and any custom action) must carry `#[Endpoint(title: '...', description: '...')]` from `Dedoc\Scramble\Attributes\Endpoint`, following the pattern already on `TagController`/`PointController`: title = "Verb a/an resource" (e.g. "Update a point"), description = one sentence on behavior/constraints.
+
+Without it, Scramble shows no summary and the API doc list falls back to raw operationIds, which look inconsistent (clean `v1.points.index` next to ugly auto-suffixed `point.update_14` for the PUT/PATCH pair — see the routes.md rule on that collision). Setting the title makes every route's doc entry readable and uniform regardless of that underlying id oddity.
+
+Note: `#[Endpoint]` isn't repeatable, so the PUT and PATCH variants of an `apiResource` update share the exact same title/description — that's expected, not a bug to fix.
