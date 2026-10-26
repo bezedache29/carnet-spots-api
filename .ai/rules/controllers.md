@@ -45,5 +45,7 @@ The mobile client replays offline changes through the CRUD endpoints (README 5.2
 ## Touch the point when only its tags change
 `sync()` on the point_tag pivot doesn't bump the point's `updated_at`, and `GET /sync` only returns rows whose `updated_at >= since`. Any code path that changes a point's tags must `$point->touch()` when `sync()` reports changes, otherwise the phone never sees the new tags.
 
+The opposite holds for tags: renaming or deleting a tag must NOT touch its points. Clients link points to tags by id (README 5.2), and bumping the points would make a queued offline edit of those points fail with a false 409 (`base_updated_at` no longer matches).
+
 ## Sync cursor: server time minus a margin, rounded down, compared with >=
 `server_time` is captured before reading, moved back by `SyncController::SERVER_TIME_MARGIN_SECONDS` (a row's `updated_at` is computed in PHP before its commit, so it can become visible after a sync already handed out a later cursor) and rounded down to the second (DB timestamps have no fractions); rows are selected with `updated_at >= since` (withTrashed) so nothing changed in the same second is missed — duplicates are fine, the client upserts. Convert `since` to the app timezone before querying: the query builder binds Carbon without timezone conversion.

@@ -6,6 +6,7 @@ use App\Http\Requests\StoreTagRequest;
 use App\Http\Requests\UpdateTagRequest;
 use App\Http\Resources\TagResource;
 use App\Models\Tag;
+use App\Models\User;
 use Dedoc\Scramble\Attributes\Endpoint;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -14,6 +15,7 @@ use Illuminate\Http\Response;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class TagController extends Controller implements HasMiddleware
 {
@@ -49,10 +51,15 @@ class TagController extends Controller implements HasMiddleware
         try {
             $tag = $request->user()->tags()->create($request->validated());
         } catch (UniqueConstraintViolationException $exception) {
-            // The same creation sent twice at once: the other request inserted this uuid first.
+            // Either the same creation sent twice at once (the other request inserted this uuid first),
+            // or another request took this name at the same time (see rethrowAsNameTaken()).
             $tag = $request->user()->tags()->withTrashed()->where('uuid', $request->validated('uuid'))->first();
 
-            return $tag === null ? throw $exception : $this->replayedCreation($tag);
+            if ($tag !== null) {
+                return $this->replayedCreation($tag);
+            }
+
+            $this->rethrowAsNameTaken($exception, $request->user(), $request->validated('name'));
         }
 
         return (new TagResource($tag))->response()->setStatusCode(201);
@@ -64,7 +71,7 @@ class TagController extends Controller implements HasMiddleware
         return new TagResource($tag);
     }
 
-    #[Endpoint(title: 'Update a tag', description: 'Renames a tag owned by the authenticated user, bumping the `updated_at` of its points so the sync sends them with the new name. `base_updated_at` is optional: the `updated_at` of the version the client edited; if the tag changed since, nothing is saved and 409 is returned with the current tag.')]
+    #[Endpoint(title: 'Update a tag', description: 'Renames a tag owned by the authenticated user. Its points are not changed: clients link points to tags by id. `base_updated_at` is optional: the `updated_at` of the version the client edited; if the tag changed since, nothing is saved and 409 is returned with the current tag.')]
     public function update(UpdateTagRequest $request, Tag $tag): TagResource|JsonResponse
     {
         if ($this->changedSince($tag, $request->validated('base_updated_at'))) {
@@ -74,31 +81,42 @@ class TagController extends Controller implements HasMiddleware
                 ->setStatusCode(409);
         }
 
-        DB::transaction(function () use ($request, $tag): void {
+        try {
             $tag->update($request->safe()->except('base_updated_at'));
-
-            // Points embed their tags: bump them so the sync sends them with the new name.
-            if ($tag->wasChanged('name')) {
-                $tag->points()->touch();
-            }
-        });
+        } catch (UniqueConstraintViolationException $exception) {
+            $this->rethrowAsNameTaken($exception, $request->user(), $request->validated('name'));
+        }
 
         return new TagResource($tag);
     }
 
-    #[Endpoint(title: 'Delete a tag', description: 'Soft-deletes a tag owned by the authenticated user, detaching it from any points (whose `updated_at` is bumped), so the sync can tell other devices it is gone. Deleting an already deleted tag answers 204 too, so the call can be replayed.')]
+    #[Endpoint(title: 'Delete a tag', description: 'Soft-deletes a tag owned by the authenticated user, detaching it from any points (whose `updated_at` is left alone: clients drop the tag from their points when the sync reports it deleted), so the sync can tell other devices it is gone. Deleting an already deleted tag answers 204 too, so the call can be replayed.')]
     public function destroy(Tag $tag): Response
     {
         if (! $tag->trashed()) {
             DB::transaction(function () use ($tag): void {
-                // Bumped before detaching, while the pivot still links them: the sync must resend these points without the tag.
-                $tag->points()->touch();
                 $tag->points()->detach();
                 $tag->delete();
             });
         }
 
         return response()->noContent();
+    }
+
+    /**
+     * Two requests passed validation with the same name at the same time, and the second one hit the
+     * `(owner_id, active_name)` index: answer 422, as validation would have. Any other unique violation
+     * (e.g. a uuid) is rethrown untouched rather than reported as a taken name.
+     */
+    private function rethrowAsNameTaken(UniqueConstraintViolationException $exception, User $owner, string $name): never
+    {
+        if ($owner->tags()->where('name', $name)->exists()) {
+            throw ValidationException::withMessages([
+                'name' => __('validation.unique', ['attribute' => 'name']),
+            ]);
+        }
+
+        throw $exception;
     }
 
     /**

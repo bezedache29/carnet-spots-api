@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\PointStatus;
 use App\Enums\PointVisibility;
+use App\Rules\Iso8601DateTime;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -45,7 +46,7 @@ class UpdatePointRequest extends FormRequest
                 Rule::exists('tags', 'id')->where('owner_id', $this->user()->id)->whereNull('deleted_at'),
             ],
             // updated_at of the version the client edited: a newer one on the server answers 409.
-            'base_updated_at' => ['sometimes', 'date'],
+            'base_updated_at' => ['sometimes', 'date', new Iso8601DateTime],
         ];
     }
 }

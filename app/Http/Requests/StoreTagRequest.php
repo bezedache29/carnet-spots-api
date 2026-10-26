@@ -13,7 +13,7 @@ class StoreTagRequest extends FormRequest
     /**
      * Determine if the user is authorized to make this request.
      *
-     * Ownership is enforced by TagPolicy (via authorizeResource in the
+     * Ownership is enforced by TagPolicy (via HasMiddleware in the
      * controller), not here — this only validates the payload shape.
      */
     public function authorize(): bool
@@ -25,7 +25,7 @@ class StoreTagRequest extends FormRequest
      * The tag created by an earlier attempt of this same creation (same `uuid`, same owner), deleted ones included.
      *
      * Looked up before validation so a replay is recognised even if the rest of its payload no longer
-     * validates (e.g. one of its tags was deleted since the first attempt).
+     * validates (e.g. its name was taken by another tag since the first attempt).
      */
     public function replayedTag(): ?Tag
     {

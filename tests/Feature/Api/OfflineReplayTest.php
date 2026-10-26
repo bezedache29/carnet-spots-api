@@ -2,6 +2,7 @@
 
 use App\Http\Requests\StorePointRequest;
 use App\Http\Requests\StoreTagRequest;
+use App\Http\Requests\UpdateTagRequest;
 use App\Models\Point;
 use App\Models\Tag;
 use App\Models\User;
@@ -112,6 +113,52 @@ describe('creating with a client uuid', function () {
 
         $response->assertOk()->assertJsonPath('data.uuid', $uuid);
         expect($user->tags()->count())->toBe(1);
+    });
+
+    it('answers 422, not 500, when another request creates a tag with the same name at the same time', function () {
+        $user = User::factory()->create();
+        // The other request (another uuid, e.g. from the web) inserts the name between this request's validation and its insert.
+        // This hook runs after the Form Request is validated: registered before it, validation itself would answer the
+        // 422 and the test would pass without the catch in TagController.
+        $this->app->afterResolving(StoreTagRequest::class, function () use ($user): void {
+            Tag::factory()->for($user, 'owner')->create(['name' => 'forest']);
+        });
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/tags', ['uuid' => (string) Str::uuid7(), 'name' => 'forest'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('name');
+        expect($user->tags()->count())->toBe(1);
+    });
+
+    it('answers 422, not 500, when another request renames a tag to the same name at the same time', function () {
+        $user = User::factory()->create();
+        $tag = Tag::factory()->for($user, 'owner')->create(['name' => 'beach']);
+        // Runs after the Form Request is validated, like in the creation test above: only the catch in update() can answer 422.
+        $this->app->afterResolving(UpdateTagRequest::class, function () use ($user): void {
+            Tag::factory()->for($user, 'owner')->create(['name' => 'forest']);
+        });
+        Sanctum::actingAs($user);
+
+        $this->patchJson("/api/v1/tags/{$tag->id}", ['name' => 'forest'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('name');
+        expect($tag->fresh()->name)->toBe('beach');
+    });
+
+    it('does not report a uuid clash with another user as a taken name', function () {
+        $user = User::factory()->create();
+        $uuid = (string) Str::uuid7();
+        // Another user's tag gets the same uuid between this request's validation and its insert.
+        $this->app->afterResolving(StoreTagRequest::class, function () use ($uuid): void {
+            Tag::factory()->create(['uuid' => $uuid]);
+        });
+        Sanctum::actingAs($user);
+
+        $this->withoutExceptionHandling();
+
+        expect(fn () => $this->postJson('/api/v1/tags', ['uuid' => $uuid, 'name' => 'forest']))
+            ->toThrow(UniqueConstraintViolationException::class);
     });
 
     it('returns 404 when the replayed creation was deleted since', function () {
@@ -231,14 +278,38 @@ describe('updating with base_updated_at', function () {
         expect($point->fresh()->updated_at->year)->not->toBe(2999);
     });
 
-    it('rejects a base_updated_at that is not a date', function () {
+    it('rejects a base_updated_at that is not an ISO 8601 date-time', function (string $baseUpdatedAt) {
         $user = User::factory()->create();
         $point = Point::factory()->for($user, 'owner')->create();
+        $tag = Tag::factory()->for($user, 'owner')->create();
         Sanctum::actingAs($user);
 
-        $this->patchJson("/api/v1/points/{$point->id}", ['base_updated_at' => 'nope'])
+        $this->patchJson("/api/v1/points/{$point->id}", ['base_updated_at' => $baseUpdatedAt])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('base_updated_at');
+        $this->patchJson("/api/v1/tags/{$tag->id}", ['name' => 'woods', 'base_updated_at' => $baseUpdatedAt])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('base_updated_at');
+    })->with(['nope', 'now', '2026-07-14 +10 years', '2026-07-14', '2026-02-31T10:00:00Z']);
+
+    it('is not a conflict to edit a point offline after renaming or deleting one of its tags', function () {
+        $user = User::factory()->create();
+        $this->travelTo(Date::parse('2026-07-14 10:00:00'));
+        $point = Point::factory()->for($user, 'owner')->create();
+        $renamed = Tag::factory()->for($user, 'owner')->create(['name' => 'beach']);
+        $deleted = Tag::factory()->for($user, 'owner')->create();
+        $point->tags()->attach([$renamed->id, $deleted->id]);
+        $this->travelTo(Date::parse('2026-07-16 10:00:00'));
+        Sanctum::actingAs($user);
+
+        // The queue replays the tag changes first, then the point edit made from the 14th version.
+        $this->patchJson("/api/v1/tags/{$renamed->id}", ['name' => 'beaches'])->assertOk();
+        $this->deleteJson("/api/v1/tags/{$deleted->id}")->assertNoContent();
+
+        $this->patchJson("/api/v1/points/{$point->id}", [
+            'status' => 'validated',
+            'base_updated_at' => '2026-07-14T10:00:00.000000Z',
+        ])->assertOk();
     });
 
     it('returns 404 when updating a deleted point, so the client drops its offline change', function () {

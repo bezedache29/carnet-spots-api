@@ -51,7 +51,7 @@ it('resends a change written just before the previous sync handed out its server
         ->assertJsonPath('points.0.id', $point->id);
 });
 
-it('resends the points of a deleted tag, without that tag', function () {
+it('reports a deleted tag without resending its points, which the client updates itself', function () {
     $user = User::factory()->create();
     $this->travelTo(Date::parse('2026-07-14 10:00:00'));
     $point = Point::factory()->for($user, 'owner')->create();
@@ -63,12 +63,12 @@ it('resends the points of a deleted tag, without that tag', function () {
 
     $this->getJson('/api/v1/sync?since=2026-07-14T11:00:00Z')
         ->assertOk()
-        ->assertJsonPath('points.0.id', $point->id)
-        ->assertJsonPath('points.0.tags', [])
+        ->assertJsonPath('points', [])
         ->assertJsonPath('deleted.tags.0.id', $tag->id);
+    $this->assertDatabaseMissing('point_tag', ['point_id' => $point->id, 'tag_id' => $tag->id]);
 });
 
-it('resends the points of a renamed tag, with the new name', function () {
+it('sends a renamed tag without resending its points, which link to it by id', function () {
     $user = User::factory()->create();
     $this->travelTo(Date::parse('2026-07-14 10:00:00'));
     $point = Point::factory()->for($user, 'owner')->create();
@@ -80,8 +80,9 @@ it('resends the points of a renamed tag, with the new name', function () {
 
     $this->getJson('/api/v1/sync?since=2026-07-14T11:00:00Z')
         ->assertOk()
-        ->assertJsonPath('points.0.id', $point->id)
-        ->assertJsonPath('points.0.tags.0.name', 'woods');
+        ->assertJsonPath('points', [])
+        ->assertJsonPath('tags.0.id', $tag->id)
+        ->assertJsonPath('tags.0.name', 'woods');
 });
 
 it('returns only what changed since the previous sync', function () {
@@ -176,7 +177,7 @@ it('rejects a since that is not an ISO 8601 date', function (string $since) {
     $this->getJson('/api/v1/sync?since='.urlencode($since))
         ->assertUnprocessable()
         ->assertJsonValidationErrors('since');
-})->with(['yesterday-ish', 'now', '2026-07-14', '14/07/2026 10:00']);
+})->with(['yesterday-ish', 'now', '2026-07-14', '14/07/2026 10:00', '2026-07-14 +10 years', '2026-02-31T10:00:00Z']);
 
 it('accepts the server time it returned as the next since', function () {
     Sanctum::actingAs(User::factory()->create());

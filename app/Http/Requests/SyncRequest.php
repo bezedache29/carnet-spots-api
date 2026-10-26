@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Rules\Iso8601DateTime;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -27,9 +28,7 @@ class SyncRequest extends FormRequest
     {
         return [
             // The `server_time` returned by the previous sync. Omitted on the first sync.
-            // ISO 8601 only, with or without fractions of a second: `date` alone would also accept "now".
-            // Not `date_format`: it re-formats the value to compare, and PHP writes a `Z` suffix back as `+00:00`.
-            'since' => ['sometimes', 'date', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/'],
+            'since' => ['sometimes', 'date', new Iso8601DateTime],
         ];
     }
 }
