@@ -99,7 +99,7 @@ L'app doit fonctionner **sans réseau sur le terrain**. Cette API n'intervient q
 ### 5.1 Tuiles cartographiques — Protomaps / `.pmtiles`
 
 - Le tile server officiel OSM interdit le téléchargement en masse/automatisé pour usage offline. OSM reste la source des données ; seule l'infrastructure de distribution change.
-- Un fichier **`.pmtiles`** régional est généré (extraction ciblée sur la zone du road trip, pas la planète entière) et **servi en fichier statique par cette API**.
+- Un fichier **`.pmtiles`** régional est généré (extraction ciblée sur la zone du road trip, pas la planète entière) et **téléchargé via cette API**, réservé aux utilisateurs connectés (le fichier n'est pas public : Laravel vérifie le token, puis Nginx envoie le fichier).
 - Le mobile télécharge ce fichier avant le départ (au wifi) puis le lit en local via `file://` — l'API n'est plus sollicitée pour la carte une fois sur le terrain.
 - Attribution ODbL (`© OpenStreetMap contributors`) gérée côté client (styles MapLibre).
 
@@ -114,7 +114,7 @@ L'app doit fonctionner **sans réseau sur le terrain**. Cette API n'intervient q
 2. Routes API : CRUD `points`, CRUD `tags`, endpoint "points proches d'une position" (Haversine)
 3. Auth Sanctum (même en solo, un seul compte)
 4. Endpoint de sync pour le mobile + rejeu de mutations via les endpoints CRUD
-5. Service de fichiers statiques pour les `.pmtiles` régionaux
+5. Téléchargement authentifié des `.pmtiles` régionaux (`GET /api/v1/tiles`, fichiers déposés à la main dans `storage/app/private/tiles/`, envoyés par Nginx en prod via `X-Accel-Redirect`)
 
 ## 7. Hors scope V1
 

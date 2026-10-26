@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\PointController;
 use App\Http\Controllers\SyncController;
 use App\Http\Controllers\TagController;
+use App\Http\Controllers\TileController;
 use App\Http\Resources\UserResource;
 use Dedoc\Scramble\Attributes\Endpoint;
 use Illuminate\Http\Request;
@@ -42,6 +43,12 @@ Route::prefix('v1')->group(function () {
             // GET /points/nearby is swallowed by GET /points/{point}.
             Route::get('/points/nearby', [PointController::class, 'nearby'])->name('points.nearby');
             Route::apiResource('points', PointController::class)->withTrashed(['destroy']);
+
+            // Restricted to safe file names: the parameter becomes a path on the tiles disk.
+            Route::get('/tiles', [TileController::class, 'index'])->name('tiles.index');
+            Route::get('/tiles/{tile}', [TileController::class, 'show'])
+                ->where('tile', '[A-Za-z0-9_-]+')
+                ->name('tiles.show');
         });
     });
 

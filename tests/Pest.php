@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
 /*
@@ -63,4 +64,15 @@ function haversineKm(float $lat1, float $lng1, float $lat2, float $lng2): float
     $a = max(0.0, min(1.0, $a));
 
     return 2 * 6371 * asin(sqrt($a));
+}
+
+/**
+ * The body a file download actually sends, Range included (BinaryFileResponse writes it straight to the output).
+ */
+function sentContent(TestResponse $response): string
+{
+    ob_start();
+    $response->baseResponse->sendContent();
+
+    return ob_get_clean();
 }

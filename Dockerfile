@@ -29,6 +29,9 @@ RUN composer dump-autoload --optimize \
     && chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
+# Map tiles are sent by Nginx (location /_protected-tiles/ in docker/nginx.conf), not by PHP
+ENV TILES_X_ACCEL_REDIRECT=/_protected-tiles/
+
 # Config nginx / supervisor
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
