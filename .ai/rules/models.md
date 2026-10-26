@@ -1,6 +1,7 @@
 ---
 paths:
   - app/Models/Point.php
+  - app/Models/Tag.php
 ---
 
 # Models
@@ -16,3 +17,6 @@ The `visitedAt()` set mutator parses the value and converts it to `config('app.t
 The column is a `datetime`, not a `timestamp` (migration `2026_10_26_012305_change_visited_at_to_datetime_on_points_table`): a MySQL `timestamp` only holds 1970 → 2038 and a date outside that range made the insert fail with a 500. `datetime` does no timezone conversion, which is fine because the mutator always writes UTC. Don't switch it back to `timestamp`.
 
 That migration must not force the MySQL session timezone (`SET time_zone = …`): existing `timestamp` values were written through the server's default session timezone, and converting them under that same timezone is what keeps every visit time unchanged, whatever the server is set to (forcing UTC would shift them by 1–2 h on a server set to e.g. `Europe/Paris`).
+
+## Tag name uniqueness lives on the generated active_name column
+Tags are soft-deleted, so `unique(owner_id, name)` would block reusing a deleted tag's name forever. The DB unique index is on `(owner_id, active_name)`, where `active_name` is a stored generated column `if(deleted_at is null, name, null)` (MySQL allows many NULLs in a unique index). Never write `active_name` yourself, and keep `->withoutTrashed()` on every `Rule::unique('tags', 'name')` so validation matches the index.

@@ -51,12 +51,12 @@ it('rejects a duplicate tag name for the same owner', function () {
     Tag::factory()->for($owner, 'owner')->create(['name' => 'plage']);
 })->throws(QueryException::class);
 
-it('deletes its pivot rows when the tag is deleted', function () {
+it('deletes its pivot rows when the tag is force-deleted', function () {
     $tag = Tag::factory()->create();
     $point = Point::factory()->for($tag->owner, 'owner')->create();
     $tag->points()->attach($point);
 
-    $tag->delete();
+    $tag->forceDelete();
 
     $this->assertDatabaseMissing('point_tag', ['point_id' => $point->id, 'tag_id' => $tag->id]);
 });

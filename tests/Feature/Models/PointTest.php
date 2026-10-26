@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 it('belongs to an owner', function () {
     $owner = User::factory()->create();
@@ -134,6 +135,7 @@ it('defaults status to to_test and visibility to private at the database level',
     $owner = User::factory()->create();
 
     $id = DB::table('points')->insertGetId([
+        'uuid' => (string) Str::uuid7(),
         'owner_id' => $owner->id,
         'latitude' => 45.0,
         'longitude' => 5.0,
@@ -175,12 +177,12 @@ it('throws when attaching the same tag to a point twice', function () {
     $point->tags()->attach($tag);
 })->throws(QueryException::class);
 
-it('deletes its pivot rows when the point is deleted', function () {
+it('deletes its pivot rows when the point is force-deleted', function () {
     $point = Point::factory()->create();
     $tag = Tag::factory()->for($point->owner, 'owner')->create();
     $point->tags()->attach($tag);
 
-    $point->delete();
+    $point->forceDelete();
 
     $this->assertDatabaseMissing('point_tag', ['point_id' => $point->id, 'tag_id' => $tag->id]);
 });

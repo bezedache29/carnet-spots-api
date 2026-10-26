@@ -767,7 +767,7 @@ describe('update', function () {
 });
 
 describe('destroy', function () {
-    it('deletes the point when it belongs to the authenticated user', function () {
+    it('soft-deletes the point when it belongs to the authenticated user', function () {
         $user = User::factory()->create();
         $point = Point::factory()->for($user, 'owner')->create();
         Sanctum::actingAs($user);
@@ -775,7 +775,7 @@ describe('destroy', function () {
         $response = $this->deleteJson("/api/v1/points/{$point->id}");
 
         $response->assertNoContent();
-        $this->assertDatabaseMissing('points', ['id' => $point->id]);
+        $this->assertSoftDeleted($point);
     });
 
     it('returns 404 when the point belongs to another user, so its existence is not revealed', function () {

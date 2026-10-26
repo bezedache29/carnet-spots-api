@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\PointController;
+use App\Http\Controllers\SyncController;
 use App\Http\Controllers\TagController;
 use App\Http\Resources\UserResource;
 use Dedoc\Scramble\Attributes\Endpoint;
@@ -32,12 +33,15 @@ Route::prefix('v1')->group(function () {
         });
 
         Route::middleware(['auth:sanctum', 'verified'])->group(function () {
-            Route::apiResource('tags', TagController::class);
+            Route::get('/sync', SyncController::class)->name('sync');
+
+            // withTrashed on destroy: deleting an already deleted item answers 204, so replays are safe.
+            Route::apiResource('tags', TagController::class)->withTrashed(['destroy']);
 
             // Must be registered before apiResource('points', ...), otherwise
             // GET /points/nearby is swallowed by GET /points/{point}.
             Route::get('/points/nearby', [PointController::class, 'nearby'])->name('points.nearby');
-            Route::apiResource('points', PointController::class);
+            Route::apiResource('points', PointController::class)->withTrashed(['destroy']);
         });
     });
 

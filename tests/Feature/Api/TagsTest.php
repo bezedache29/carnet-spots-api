@@ -311,7 +311,7 @@ describe('update', function () {
 });
 
 describe('destroy', function () {
-    it('deletes the tag when it belongs to the authenticated user', function () {
+    it('soft-deletes the tag when it belongs to the authenticated user', function () {
         $user = User::factory()->create();
         $tag = Tag::factory()->for($user, 'owner')->create();
         Sanctum::actingAs($user);
@@ -319,7 +319,7 @@ describe('destroy', function () {
         $response = $this->deleteJson("/api/v1/tags/{$tag->id}");
 
         $response->assertNoContent();
-        $this->assertDatabaseMissing('tags', ['id' => $tag->id]);
+        $this->assertSoftDeleted($tag);
     });
 
     it('returns 404 when the tag belongs to another user, so its existence is not revealed', function () {
