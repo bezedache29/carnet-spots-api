@@ -35,7 +35,7 @@ class UpdatePointRequest extends FormRequest
             'title' => ['sometimes', 'nullable', 'string', 'max:255'],
             'latitude' => ['sometimes', 'numeric', 'between:-90,90'],
             'longitude' => ['sometimes', 'numeric', 'between:-180,180'],
-            'note' => ['sometimes', 'nullable', 'string'],
+            'note' => ['sometimes', 'nullable', 'string', 'max:10000'],
             'status' => ['sometimes', Rule::enum(PointStatus::class)],
             'visited_at' => ['sometimes', 'nullable', 'date'],
             'visibility' => ['sometimes', Rule::enum(PointVisibility::class)],

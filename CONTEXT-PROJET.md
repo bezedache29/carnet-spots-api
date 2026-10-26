@@ -44,7 +44,7 @@ Schema::create('points', function (Blueprint $table) {
     $table->text('note')->nullable();
     $table->enum('status', ['to_test', 'validated', 'to_avoid', 'already_slept'])
           ->default('to_test');
-    $table->timestamp('visited_at')->nullable();
+    $table->dateTime('visited_at')->nullable(); // datetime, not timestamp: any year (see migration 2026_10_26)
     $table->enum('visibility', ['private', 'public'])->default('private');
     $table->timestamps();
 

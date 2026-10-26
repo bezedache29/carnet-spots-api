@@ -30,7 +30,7 @@ class UpdateTagRequest extends FormRequest
             'name' => [
                 'required',
                 'string',
-                'max:255',
+                'max:50',
                 Rule::unique('tags', 'name')
                     ->where('owner_id', $this->user()->id)
                     ->ignore($this->route('tag')),

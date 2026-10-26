@@ -13,9 +13,12 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Support\Facades\DB;
 
 class PointController extends Controller implements HasMiddleware
 {
+    public const PER_PAGE = 50;
+
     /**
      * @return array<int, Middleware>
      */
@@ -30,11 +33,11 @@ class PointController extends Controller implements HasMiddleware
         ];
     }
 
-    #[Endpoint(title: 'List points', description: 'Returns every point owned by the authenticated user, most recent first, with tags eager-loaded.')]
+    #[Endpoint(title: 'List points', description: 'Returns the points owned by the authenticated user, most recent first (ties broken by id, so pages never overlap), 50 per page, with tags eager-loaded.')]
     public function index(): AnonymousResourceCollection
     {
         return PointResource::collection(
-            request()->user()->points()->with('tags')->latest()->get()
+            request()->user()->points()->with('tags')->latest()->latest('id')->paginate(self::PER_PAGE)
         );
     }
 
@@ -58,11 +61,15 @@ class PointController extends Controller implements HasMiddleware
     #[Endpoint(title: 'Create a point', description: 'Creates a point for the authenticated user. `tag_ids` is optional and must reference tags owned by the same user.')]
     public function store(StorePointRequest $request): JsonResponse
     {
-        $point = $request->user()->points()->create($request->safe()->except('tag_ids'));
+        $point = DB::transaction(function () use ($request): Point {
+            $point = $request->user()->points()->create($request->safe()->except('tag_ids'));
 
-        if ($request->has('tag_ids')) {
-            $point->tags()->sync($request->validated('tag_ids'));
-        }
+            if ($request->has('tag_ids')) {
+                $point->tags()->sync($request->validated('tag_ids'));
+            }
+
+            return $point;
+        });
 
         return (new PointResource($point->load('tags')))->response()->setStatusCode(201);
     }
@@ -73,14 +80,16 @@ class PointController extends Controller implements HasMiddleware
         return new PointResource($point->load('tags'));
     }
 
-    #[Endpoint(title: 'Update a point', description: "Updates a point owned by the authenticated user. Every field is optional (PATCH-style), e.g. send only `status`/`visited_at`/`note` to mark a point as visited. `tag_ids`, when present, replaces the point's tags and must reference tags owned by the same user.")]
+    #[Endpoint(title: 'Update a point', description: "Updates a point owned by the authenticated user. Every field is optional (PATCH-style), e.g. send only `status`/`visited_at`/`note` to mark a point as visited. `tag_ids`, when present, replaces the point's tags and must reference tags owned by the same user. All-or-nothing: if saving fails, an error is returned and neither the fields nor the tags change.")]
     public function update(UpdatePointRequest $request, Point $point): PointResource
     {
-        $point->update($request->safe()->except('tag_ids'));
+        DB::transaction(function () use ($request, $point): void {
+            $point->update($request->safe()->except('tag_ids'));
 
-        if ($request->has('tag_ids')) {
-            $point->tags()->sync($request->validated('tag_ids'));
-        }
+            if ($request->has('tag_ids')) {
+                $point->tags()->sync($request->validated('tag_ids'));
+            }
+        });
 
         return new PointResource($point->load('tags'));
     }
