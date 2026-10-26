@@ -105,15 +105,15 @@ L'app doit fonctionner **sans réseau sur le terrain**. Cette API n'intervient q
 
 ### 5.2 Données applicatives — sync + rejeu de mutations
 
-- **Sync descendante** : endpoint(s) permettant au mobile de récupérer les points pertinents (zone du road trip) avant le départ.
-- **Rejeu de mutations** : le mobile accumule les changements offline (statut, note) dans une file locale ; cette API doit exposer les endpoints nécessaires pour les rejouer dès que le réseau est retrouvé (probable : endpoints CRUD standards sur `points`, avec gestion d'horodatage pour trancher les conflits — stratégie _last-write-wins_ envisagée vu l'usage solo, à documenter précisément avant implémentation).
+- **Sync descendante** (`GET /api/v1/sync`) : le mobile récupère **tous** les points et tags de l'utilisateur (pas seulement la zone du road trip : quelques centaines de points pèsent quelques Ko, et un point déplacé hors d'un filtre de zone n'arriverait jamais sur le téléphone). Ensuite, seulement ce qui a changé depuis la dernière sync (`since` = `server_time` renvoyé la fois précédente), plus les ids supprimés.
+- **Rejeu de mutations** : endpoints CRUD standards, rejoués un par un dans l'ordre. Création avec un `uuid` généré par le téléphone (pas de doublon au rejeu) ; modification avec `base_updated_at` (409 si l'élément a changé sur le serveur entre-temps — seule l'heure du serveur compte) ; suppressions douces (`deleted_at`), la suppression gagne. Détail dans la section 5.2 du README.
 
 ## 6. Roadmap V1 pour ce repo
 
 1. Migrations + modèles Eloquent (`Point`, `Tag`, `User`)
 2. Routes API : CRUD `points`, CRUD `tags`, endpoint "points proches d'une position" (Haversine)
 3. Auth Sanctum (même en solo, un seul compte)
-4. Endpoint(s) de sync pour le mobile (récupération groupée par zone) + endpoints de rejeu de mutations
+4. Endpoint de sync pour le mobile + rejeu de mutations via les endpoints CRUD
 5. Service de fichiers statiques pour les `.pmtiles` régionaux
 
 ## 7. Hors scope V1

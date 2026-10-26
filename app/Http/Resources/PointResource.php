@@ -14,6 +14,7 @@ class PointResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'uuid' => $this->uuid,
             'title' => $this->title,
             'latitude' => (float) $this->latitude,
             'longitude' => (float) $this->longitude,

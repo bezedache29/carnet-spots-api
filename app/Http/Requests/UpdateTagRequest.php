@@ -33,8 +33,11 @@ class UpdateTagRequest extends FormRequest
                 'max:50',
                 Rule::unique('tags', 'name')
                     ->where('owner_id', $this->user()->id)
+                    ->withoutTrashed()
                     ->ignore($this->route('tag')),
             ],
+            // updated_at of the version the client edited: a newer one on the server answers 409.
+            'base_updated_at' => ['sometimes', 'date'],
         ];
     }
 }
