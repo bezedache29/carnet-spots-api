@@ -22,6 +22,8 @@ services:
         networks:
             - sail
             - traefik-network
+        depends_on:
+            - mysql
         labels:
             - 'traefik.enable=true'
             - 'traefik.http.routers.carnet-spots-api.rule=Host(`${APP_DOMAIN}`)'
@@ -29,8 +31,65 @@ services:
             - 'traefik.http.routers.carnet-spots-api.tls=true'
             - 'traefik.http.services.carnet-spots-api.loadbalancer.server.port=80'
             - 'traefik.docker.network=traefik-network'
+    mysql:
+        image: 'mysql:8.4'
+        ports:
+            - '${FORWARD_DB_PORT:-3306}:3306'
+        environment:
+            MYSQL_ROOT_PASSWORD: '${DB_PASSWORD}'
+            MYSQL_ROOT_HOST: '%'
+            MYSQL_DATABASE: '${DB_DATABASE}'
+            MYSQL_USER: '${DB_USERNAME}'
+            MYSQL_PASSWORD: '${DB_PASSWORD}'
+            MYSQL_ALLOW_EMPTY_PASSWORD: 1
+        volumes:
+            - 'carnet-spots-api-mysql:/var/lib/mysql'
+            - './vendor/laravel/sail/database/mysql/create-testing-database.sh:/docker-entrypoint-initdb.d/10-create-testing-database.sh'
+        networks:
+            - sail
+        healthcheck:
+            test:
+                - CMD
+                - mysqladmin
+                - ping
+                - '-p${DB_PASSWORD}'
+            retries: 3
+            timeout: 5s
+    phpmyadmin:
+        image: 'phpmyadmin:latest'
+        environment:
+            PMA_HOST: mysql
+            PMA_USER: '${DB_USERNAME}'
+            PMA_PASSWORD: '${DB_PASSWORD}'
+        networks:
+            - sail
+            - traefik-network
+        depends_on:
+            - mysql
+        labels:
+            - 'traefik.enable=true'
+            - 'traefik.http.routers.carnet-spots-api-pma.rule=Host(`pma-carnet-spots-api.dev.localhost`)'
+            - 'traefik.http.routers.carnet-spots-api-pma.entrypoints=websecure'
+            - 'traefik.http.routers.carnet-spots-api-pma.tls=true'
+            - 'traefik.http.services.carnet-spots-api-pma.loadbalancer.server.port=80'
+            - 'traefik.docker.network=traefik-network'
+    mailpit:
+        image: 'axllent/mailpit:latest'
+        networks:
+            - sail
+            - traefik-network
+        labels:
+            - 'traefik.enable=true'
+            - 'traefik.http.routers.carnet-spots-api-mail.rule=Host(`mail-carnet-spots-api.dev.localhost`)'
+            - 'traefik.http.routers.carnet-spots-api-mail.entrypoints=websecure'
+            - 'traefik.http.routers.carnet-spots-api-mail.tls=true'
+            - 'traefik.http.services.carnet-spots-api-mail.loadbalancer.server.port=8025'
+            - 'traefik.docker.network=traefik-network'
 networks:
     sail:
         driver: bridge
     traefik-network:
         external: true
+volumes:
+    carnet-spots-api-mysql:
+        driver: local

@@ -4,7 +4,9 @@
 
 ## 1. Contexte & besoin du projet
 
-App personnelle (usage solo en V1) pour marquer des points GPS précis (parkings, spots de nuit, emplacements repérés) même sans adresse existante (ex. en pleine forêt), avec une note libre, pour les retrouver et les consulter une fois sur le terrain **sans réseau**.
+App personnelle (usage solo en V1, pour les tests) pour marquer des points GPS précis (parkings, spots de nuit, emplacements repérés) même sans adresse existante (ex. en pleine forêt), avec une note libre, pour les retrouver et les consulter une fois sur le terrain **sans réseau**.
+
+À moyen terme, l'app a vocation à s'ouvrir à d'autres utilisateurs (multi-comptes) — c'est la raison pour laquelle `owner_id` est présent dès la V1 sur `points` et `tags`, avec un scoping strict par owner (jamais de partage entre utilisateurs au sein de l'app).
 
 Deux phases d'usage :
 
@@ -40,9 +42,9 @@ Schema::create('points', function (Blueprint $table) {
     $table->decimal('latitude', 10, 7);
     $table->decimal('longitude', 10, 7);
     $table->text('note')->nullable();
-    $table->enum('status', ['a_tester', 'valide', 'a_eviter', 'deja_dormi'])
-          ->default('a_tester');
-    $table->timestamp('visited_at')->nullable();
+    $table->enum('status', ['to_test', 'validated', 'to_avoid', 'already_slept'])
+          ->default('to_test');
+    $table->dateTime('visited_at')->nullable(); // datetime, not timestamp: any year (see migration 2026_10_26)
     $table->enum('visibility', ['private', 'public'])->default('private');
     $table->timestamps();
 
@@ -73,7 +75,7 @@ Schema::create('point_tag', function (Blueprint $table) {
 });
 ```
 
-### `photos` (V2, pas urgent)
+### `photos` (post-prototype, pas urgent)
 
 ```php
 Schema::create('photos', function (Blueprint $table) {
@@ -84,6 +86,10 @@ Schema::create('photos', function (Blueprint $table) {
 });
 ```
 
+L'action "marquer un point comme visité" (choix du status + note libre) est prévue dès la V1, en **texte seulement** : c'est un `PATCH` standard sur `/points/{id}` (status, visited_at, note), pas d'endpoint dédié. L'ajout d'images à cette action est confirmé au planning mais reporté après le prototype (nécessite la table `photos` ci-dessus + gestion d'upload/stockage).
+
+**Partage** : aucune visibilité publique côté API (pas de route publique, pas de modération à prévoir en V1 malgré le champ `visibility`). Le seul partage envisagé passe par des canaux externes (WhatsApp et autres messageries) — modalités non figées, à définir plus tard (probablement export/génération de lien côté client, pas un endpoint public de cette API).
+
 **Pourquoi `owner_id` et `visibility` dès la V1** (même en usage solo) : permet d'ouvrir l'app à d'autres utilisateurs plus tard sans migration destructive — juste des ajouts (policies Laravel, modération sur points publics, rate limiting).
 
 ## 5. Rôle de l'API dans le offline (tuiles + données)
@@ -93,22 +99,22 @@ L'app doit fonctionner **sans réseau sur le terrain**. Cette API n'intervient q
 ### 5.1 Tuiles cartographiques — Protomaps / `.pmtiles`
 
 - Le tile server officiel OSM interdit le téléchargement en masse/automatisé pour usage offline. OSM reste la source des données ; seule l'infrastructure de distribution change.
-- Un fichier **`.pmtiles`** régional est généré (extraction ciblée sur la zone du road trip, pas la planète entière) et **servi en fichier statique par cette API**.
+- Un fichier **`.pmtiles`** régional est généré (extraction ciblée sur la zone du road trip, pas la planète entière) et **téléchargé via cette API**, réservé aux utilisateurs connectés (le fichier n'est pas public : Laravel vérifie le token, puis Nginx envoie le fichier).
 - Le mobile télécharge ce fichier avant le départ (au wifi) puis le lit en local via `file://` — l'API n'est plus sollicitée pour la carte une fois sur le terrain.
 - Attribution ODbL (`© OpenStreetMap contributors`) gérée côté client (styles MapLibre).
 
 ### 5.2 Données applicatives — sync + rejeu de mutations
 
-- **Sync descendante** : endpoint(s) permettant au mobile de récupérer les points pertinents (zone du road trip) avant le départ.
-- **Rejeu de mutations** : le mobile accumule les changements offline (statut, note) dans une file locale ; cette API doit exposer les endpoints nécessaires pour les rejouer dès que le réseau est retrouvé (probable : endpoints CRUD standards sur `points`, avec gestion d'horodatage pour trancher les conflits — stratégie _last-write-wins_ envisagée vu l'usage solo, à documenter précisément avant implémentation).
+- **Sync descendante** (`GET /api/v1/sync`) : le mobile récupère **tous** les points et tags de l'utilisateur (pas seulement la zone du road trip : quelques centaines de points pèsent quelques Ko, et un point déplacé hors d'un filtre de zone n'arriverait jamais sur le téléphone). Ensuite, seulement ce qui a changé depuis la dernière sync (`since` = `server_time` renvoyé la fois précédente), plus les ids supprimés.
+- **Rejeu de mutations** : endpoints CRUD standards, rejoués un par un dans l'ordre. Création avec un `uuid` généré par le téléphone (pas de doublon au rejeu) ; modification avec `base_updated_at` (409 si l'élément a changé sur le serveur entre-temps — seule l'heure du serveur compte) ; suppressions douces (`deleted_at`), la suppression gagne. Détail dans la section 5.2 du README.
 
 ## 6. Roadmap V1 pour ce repo
 
 1. Migrations + modèles Eloquent (`Point`, `Tag`, `User`)
 2. Routes API : CRUD `points`, CRUD `tags`, endpoint "points proches d'une position" (Haversine)
 3. Auth Sanctum (même en solo, un seul compte)
-4. Endpoint(s) de sync pour le mobile (récupération groupée par zone) + endpoints de rejeu de mutations
-5. Service de fichiers statiques pour les `.pmtiles` régionaux
+4. Endpoint de sync pour le mobile + rejeu de mutations via les endpoints CRUD
+5. Téléchargement authentifié des `.pmtiles` régionaux (`GET /api/v1/tiles`, fichiers déposés à la main dans `storage/app/private/tiles/`, envoyés par Nginx en prod via `X-Accel-Redirect`)
 
 ## 7. Hors scope V1
 

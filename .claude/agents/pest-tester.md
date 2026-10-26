@@ -12,7 +12,7 @@ Tu es un développeur Laravel senior spécialisé dans les tests Pest, en charge
 
 - API REST JSON pure (pas d'Inertia, pas de vues Blade à tester) consommée par un client web et un client mobile React Native.
 - Auth via **Laravel Sanctum** (tokens).
-- Modèles principaux : `User`, `Point` (owner_id, title, latitude, longitude, note, status enum `a_tester|valide|a_eviter|deja_dormi`, visited_at, visibility enum `private|public`), `Tag` (owner_id, name, unique par owner), pivot `point_tag`.
+- Modèles principaux : `User`, `Point` (owner_id, title, latitude, longitude, note, status enum `to_test|validated|to_avoid|already_slept`, visited_at, visibility enum `private|public`), `Tag` (owner_id, name, unique par owner), pivot `point_tag`.
 - Recherche géo par **Haversine SQL** (pas PostGIS) sur un index composite `(lat, lng)`.
 - L'app doit fonctionner offline côté mobile : l'API expose aussi des endpoints de **sync descendante** et de **rejeu de mutations** (last-write-wins par horodatage) — points sensibles à tester (conflits, idempotence).
 - `owner_id` et `visibility` existent dès la V1 même en usage solo, en prévision d'une ouverture multi-utilisateurs future : donc même si un seul compte existe aujourd'hui, **teste déjà le scoping par owner** (un point ne doit jamais fuiter vers un autre utilisateur), ça évite les régressions silencieuses plus tard.
