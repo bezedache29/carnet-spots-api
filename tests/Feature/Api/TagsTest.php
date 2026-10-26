@@ -123,6 +123,22 @@ describe('store', function () {
 
         $this->postJson('/api/v1/tags', ['name' => 'plage'])->assertForbidden();
     });
+
+    it('accepts a name of exactly 50 characters', function () {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/tags', ['name' => str_repeat('a', 50)])->assertCreated();
+    });
+
+    it('returns 422 for a name longer than 50 characters', function () {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/tags', ['name' => str_repeat('a', 51)])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['name' => 'The name field must not be greater than 50 characters.']);
+    });
 });
 
 describe('show', function () {
@@ -138,13 +154,13 @@ describe('show', function () {
             ->assertJsonPath('data.name', $tag->name);
     });
 
-    it('returns 403 when the tag belongs to another user', function () {
+    it('returns 404 when the tag belongs to another user, so its existence is not revealed', function () {
         $user = User::factory()->create();
         $otherUser = User::factory()->create();
         $tag = Tag::factory()->for($otherUser, 'owner')->create();
         Sanctum::actingAs($user);
 
-        $this->getJson("/api/v1/tags/{$tag->id}")->assertForbidden();
+        $this->getJson("/api/v1/tags/{$tag->id}")->assertNotFound();
     });
 
     it('returns 404 when the tag does not exist', function () {
@@ -166,6 +182,32 @@ describe('show', function () {
         Sanctum::actingAs($user);
 
         $this->getJson("/api/v1/tags/{$tag->id}")->assertForbidden();
+    });
+
+    it('exposes created_at and updated_at', function () {
+        $user = User::factory()->create();
+        $tag = Tag::factory()->for($user, 'owner')->create([
+            'created_at' => '2026-07-01 08:00:00',
+            'updated_at' => '2026-07-02 09:30:00',
+        ]);
+        Sanctum::actingAs($user);
+
+        $this->getJson("/api/v1/tags/{$tag->id}")
+            ->assertOk()
+            ->assertJsonPath('data.created_at', '2026-07-01T08:00:00.000000Z')
+            ->assertJsonPath('data.updated_at', '2026-07-02T09:30:00.000000Z');
+    });
+
+    it('returns the same 404 body for another user\'s tag as for a missing one', function () {
+        $user = User::factory()->create();
+        $foreignTag = Tag::factory()->for(User::factory(), 'owner')->create();
+        Sanctum::actingAs($user);
+
+        $foreign = $this->getJson("/api/v1/tags/{$foreignTag->id}")->assertNotFound();
+        $missing = $this->getJson('/api/v1/tags/999999')->assertNotFound();
+
+        expect($foreign->json())->toBe(['message' => 'Not found.'])
+            ->and($missing->json())->toBe($foreign->json());
     });
 });
 
@@ -219,7 +261,7 @@ describe('update', function () {
             ->assertJsonValidationErrors('name');
     });
 
-    it('returns 403 when the tag belongs to another user', function () {
+    it('returns 404 when the tag belongs to another user, so its existence is not revealed', function () {
         $user = User::factory()->create();
         $otherUser = User::factory()->create();
         $tag = Tag::factory()->for($otherUser, 'owner')->create(['name' => 'plage']);
@@ -227,7 +269,7 @@ describe('update', function () {
 
         $response = $this->putJson("/api/v1/tags/{$tag->id}", ['name' => 'montagne']);
 
-        $response->assertForbidden();
+        $response->assertNotFound();
         $this->assertDatabaseHas('tags', ['id' => $tag->id, 'name' => 'plage']);
     });
 
@@ -244,6 +286,28 @@ describe('update', function () {
 
         $this->putJson("/api/v1/tags/{$tag->id}", ['name' => 'montagne'])->assertForbidden();
     });
+
+    it('returns 422 when renaming to a name longer than 50 characters', function () {
+        $user = User::factory()->create();
+        $tag = Tag::factory()->for($user, 'owner')->create(['name' => 'plage']);
+        Sanctum::actingAs($user);
+
+        $this->putJson("/api/v1/tags/{$tag->id}", ['name' => str_repeat('a', 51)])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['name' => 'The name field must not be greater than 50 characters.']);
+
+        expect($tag->fresh()->name)->toBe('plage');
+    });
+
+    it('returns 404 for another user\'s tag before validating the payload', function () {
+        $user = User::factory()->create();
+        $tag = Tag::factory()->for(User::factory(), 'owner')->create(['name' => 'plage']);
+        Sanctum::actingAs($user);
+
+        $this->putJson("/api/v1/tags/{$tag->id}", ['name' => str_repeat('a', 51)])->assertNotFound();
+
+        expect($tag->fresh()->name)->toBe('plage');
+    });
 });
 
 describe('destroy', function () {
@@ -258,7 +322,7 @@ describe('destroy', function () {
         $this->assertDatabaseMissing('tags', ['id' => $tag->id]);
     });
 
-    it('returns 403 when the tag belongs to another user', function () {
+    it('returns 404 when the tag belongs to another user, so its existence is not revealed', function () {
         $user = User::factory()->create();
         $otherUser = User::factory()->create();
         $tag = Tag::factory()->for($otherUser, 'owner')->create();
@@ -266,7 +330,7 @@ describe('destroy', function () {
 
         $response = $this->deleteJson("/api/v1/tags/{$tag->id}");
 
-        $response->assertForbidden();
+        $response->assertNotFound();
         $this->assertDatabaseHas('tags', ['id' => $tag->id]);
     });
 

@@ -5,6 +5,9 @@ use App\Enums\PointVisibility;
 use App\Models\Point;
 use App\Models\Tag;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Factories\Sequence;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 
 describe('index', function () {
@@ -53,6 +56,49 @@ describe('index', function () {
         Sanctum::actingAs($user);
 
         $this->getJson('/api/v1/points')->assertForbidden();
+    });
+
+    it('paginates the points 50 per page', function () {
+        $user = User::factory()->create();
+        Point::factory()->for($user, 'owner')->count(51)->create();
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/v1/points')
+            ->assertOk()
+            ->assertJsonCount(50, 'data')
+            ->assertJsonPath('meta.total', 51)
+            ->assertJsonPath('meta.last_page', 2);
+
+        $this->getJson('/api/v1/points?page=2')->assertOk()->assertJsonCount(1, 'data');
+    });
+
+    it('splits points created in the same second across pages without overlap or gap', function () {
+        $user = User::factory()->create();
+        // Latitude grows with the id, so MySQL reads the rows through the (owner_id, latitude, longitude)
+        // index in ascending id order: without the id tie-breaker the tied rows would not come back newest first.
+        $points = Point::factory()->for($user, 'owner')->count(51)
+            ->sequence(fn (Sequence $sequence) => ['latitude' => 40 + $sequence->index * 0.01])
+            ->create(['created_at' => now()]);
+        Sanctum::actingAs($user);
+
+        $firstPage = $this->getJson('/api/v1/points')->json('data.*.id');
+        $secondPage = $this->getJson('/api/v1/points?page=2')->json('data.*.id');
+
+        expect([...$firstPage, ...$secondPage])->toBe($points->pluck('id')->sortDesc()->values()->all());
+    });
+
+    it('exposes created_at and updated_at so clients can compare versions', function () {
+        $user = User::factory()->create();
+        Point::factory()->for($user, 'owner')->create([
+            'created_at' => '2026-07-01 08:00:00',
+            'updated_at' => '2026-07-02 09:30:00',
+        ]);
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/v1/points')
+            ->assertOk()
+            ->assertJsonPath('data.0.created_at', '2026-07-01T08:00:00.000000Z')
+            ->assertJsonPath('data.0.updated_at', '2026-07-02T09:30:00.000000Z');
     });
 });
 
@@ -288,6 +334,122 @@ describe('store', function () {
 
         $this->postJson('/api/v1/points', ['latitude' => 45.0, 'longitude' => 5.0])->assertForbidden();
     });
+
+    it('stores visited_at in UTC when it is sent with an offset', function (string $sentValue) {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson('/api/v1/points', [
+            'latitude' => 45.0,
+            'longitude' => 5.0,
+            'visited_at' => $sentValue,
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.visited_at', '2026-07-14T19:00:00.000000Z');
+
+        $this->assertDatabaseHas('points', [
+            'id' => $response->json('data.id'),
+            'visited_at' => '2026-07-14 19:00:00',
+        ]);
+    })->with([
+        'Paris summer time offset' => '2026-07-14T21:00:00+02:00',
+        'already UTC' => '2026-07-14T19:00:00Z',
+    ]);
+
+    it('accepts a note of exactly 10000 characters', function () {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/points', [
+            'latitude' => 45.0,
+            'longitude' => 5.0,
+            'note' => str_repeat('a', 10000),
+        ])->assertCreated();
+    });
+
+    it('returns 422 instead of crashing for a note longer than 10000 characters', function () {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/points', [
+            'latitude' => 45.0,
+            'longitude' => 5.0,
+            'note' => str_repeat('a', 70000),
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['note' => 'The note field must not be greater than 10000 characters.']);
+
+        $this->assertDatabaseCount('points', 0);
+    });
+
+    it('silently ignores a tag id sent twice', function () {
+        $user = User::factory()->create();
+        $tag = Tag::factory()->for($user, 'owner')->create();
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson('/api/v1/points', [
+            'latitude' => 45.0,
+            'longitude' => 5.0,
+            'tag_ids' => [$tag->id, $tag->id],
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonCount(1, 'data.tags')
+            ->assertJsonPath('data.tags.0.id', $tag->id);
+        $this->assertDatabaseCount('point_tag', 1);
+    });
+
+    it('does not keep a half-created point when attaching its tags fails', function () {
+        $user = User::factory()->create();
+        $tag = Tag::factory()->for($user, 'owner')->create();
+        Sanctum::actingAs($user);
+
+        // Simulate a failure right after the tag rows are written, while still inside the request.
+        DB::listen(function (QueryExecuted $query) {
+            if (str_starts_with($query->sql, 'insert into `point_tag`')) {
+                throw new RuntimeException('Simulated failure while attaching tags');
+            }
+        });
+
+        $this->postJson('/api/v1/points', [
+            'latitude' => 45.0,
+            'longitude' => 5.0,
+            'tag_ids' => [$tag->id],
+        ])->assertServerError();
+
+        $this->assertDatabaseCount('points', 0);
+        $this->assertDatabaseCount('point_tag', 0);
+    });
+
+    it('stores a date-only visited_at as midnight UTC', function () {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/points', [
+            'latitude' => 45.0,
+            'longitude' => 5.0,
+            'visited_at' => '2026-07-14',
+        ])->assertCreated()
+            ->assertJsonPath('data.visited_at', '2026-07-14T00:00:00.000000Z');
+    });
+
+    it('accepts a visited_at outside the 1970-2038 range of a MySQL timestamp', function (string $sentValue, string $storedValue) {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson('/api/v1/points', [
+            'latitude' => 45.0,
+            'longitude' => 5.0,
+            'visited_at' => $sentValue,
+        ]);
+
+        $response->assertCreated();
+        $this->assertDatabaseHas('points', ['id' => $response->json('data.id'), 'visited_at' => $storedValue]);
+    })->with([
+        'before 1970' => ['1965-05-01 12:00:00', '1965-05-01 12:00:00'],
+        'after 2038' => ['2040-01-01 12:00:00', '2040-01-01 12:00:00'],
+        'offset pushing it before 1970' => ['1970-01-01T00:30:00+02:00', '1969-12-31 22:30:00'],
+    ]);
 });
 
 describe('show', function () {
@@ -303,13 +465,13 @@ describe('show', function () {
             ->assertJsonPath('data.title', $point->title);
     });
 
-    it('returns 403 when the point belongs to another user', function () {
+    it('returns 404 when the point belongs to another user, so its existence is not revealed', function () {
         $user = User::factory()->create();
         $otherUser = User::factory()->create();
         $point = Point::factory()->for($otherUser, 'owner')->create();
         Sanctum::actingAs($user);
 
-        $this->getJson("/api/v1/points/{$point->id}")->assertForbidden();
+        $this->getJson("/api/v1/points/{$point->id}")->assertNotFound();
     });
 
     it('returns 404 when the point does not exist', function () {
@@ -331,6 +493,18 @@ describe('show', function () {
         Sanctum::actingAs($user);
 
         $this->getJson("/api/v1/points/{$point->id}")->assertForbidden();
+    });
+
+    it('returns the same 404 body for another user\'s point as for a missing one', function () {
+        $user = User::factory()->create();
+        $foreignPoint = Point::factory()->for(User::factory(), 'owner')->create();
+        Sanctum::actingAs($user);
+
+        $foreign = $this->getJson("/api/v1/points/{$foreignPoint->id}")->assertNotFound();
+        $missing = $this->getJson('/api/v1/points/999999')->assertNotFound();
+
+        expect($foreign->json())->toBe(['message' => 'Not found.'])
+            ->and($missing->json())->toBe($foreign->json());
     });
 });
 
@@ -483,7 +657,7 @@ describe('update', function () {
         $this->assertDatabaseCount('point_tag', 1);
     });
 
-    it('returns 403 when the point belongs to another user', function () {
+    it('returns 404 when the point belongs to another user, so its existence is not revealed', function () {
         $user = User::factory()->create();
         $otherUser = User::factory()->create();
         $point = Point::factory()->for($otherUser, 'owner')->create(['title' => 'Untouched']);
@@ -495,7 +669,7 @@ describe('update', function () {
             'longitude' => 5.0,
         ]);
 
-        $response->assertForbidden();
+        $response->assertNotFound();
         $this->assertDatabaseHas('points', ['id' => $point->id, 'title' => 'Untouched']);
     });
 
@@ -512,6 +686,84 @@ describe('update', function () {
 
         $this->patchJson("/api/v1/points/{$point->id}", ['note' => 'nope'])->assertForbidden();
     });
+
+    it('converts visited_at sent with an offset to UTC', function () {
+        $user = User::factory()->create();
+        $point = Point::factory()->for($user, 'owner')->create();
+        Sanctum::actingAs($user);
+
+        $this->patchJson("/api/v1/points/{$point->id}", ['visited_at' => '2026-07-14T21:00:00+02:00'])
+            ->assertOk()
+            ->assertJsonPath('data.visited_at', '2026-07-14T19:00:00.000000Z');
+    });
+
+    it('clears visited_at when sent as null', function () {
+        $user = User::factory()->create();
+        $point = Point::factory()->for($user, 'owner')->create(['visited_at' => '2026-07-14 19:00:00']);
+        Sanctum::actingAs($user);
+
+        $this->patchJson("/api/v1/points/{$point->id}", ['visited_at' => null])->assertOk();
+
+        expect($point->fresh()->visited_at)->toBeNull();
+    });
+
+    it('returns 422 for a note longer than 10000 characters on update', function () {
+        $user = User::factory()->create();
+        $point = Point::factory()->for($user, 'owner')->create(['note' => 'Calme']);
+        Sanctum::actingAs($user);
+
+        $this->patchJson("/api/v1/points/{$point->id}", ['note' => str_repeat('a', 10001)])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['note' => 'The note field must not be greater than 10000 characters.']);
+
+        expect($point->fresh()->note)->toBe('Calme');
+    });
+
+    it('silently ignores a tag id sent twice on update', function () {
+        $user = User::factory()->create();
+        $point = Point::factory()->for($user, 'owner')->create();
+        $tag = Tag::factory()->for($user, 'owner')->create();
+        Sanctum::actingAs($user);
+
+        $this->patchJson("/api/v1/points/{$point->id}", ['tag_ids' => [$tag->id, $tag->id]])
+            ->assertOk()
+            ->assertJsonCount(1, 'data.tags');
+
+        $this->assertDatabaseCount('point_tag', 1);
+    });
+
+    it('returns 404 for another user\'s point before validating the payload', function () {
+        $user = User::factory()->create();
+        $point = Point::factory()->for(User::factory(), 'owner')->create();
+        Sanctum::actingAs($user);
+
+        $this->patchJson("/api/v1/points/{$point->id}", ['latitude' => 999])->assertNotFound();
+    });
+
+    it('returns an error and changes nothing when saving the tags fails', function () {
+        $user = User::factory()->create();
+        $oldTag = Tag::factory()->for($user, 'owner')->create();
+        $newTag = Tag::factory()->for($user, 'owner')->create();
+        $point = Point::factory()->for($user, 'owner')->hasAttached($oldTag)->create(['title' => 'Avant']);
+        Sanctum::actingAs($user);
+
+        // Simulate a failure right after the new tag rows are written, while still inside the request.
+        DB::listen(function (QueryExecuted $query) {
+            if (str_starts_with($query->sql, 'insert into `point_tag`')) {
+                throw new RuntimeException('Simulated failure while attaching tags');
+            }
+        });
+
+        $this->patchJson("/api/v1/points/{$point->id}", [
+            'title' => 'Après',
+            'tag_ids' => [$newTag->id],
+        ])->assertServerError()
+            ->assertJsonStructure(['message']);
+
+        $point->refresh();
+        expect($point->title)->toBe('Avant')
+            ->and($point->tags()->pluck('tags.id')->all())->toBe([$oldTag->id]);
+    });
 });
 
 describe('destroy', function () {
@@ -526,7 +778,7 @@ describe('destroy', function () {
         $this->assertDatabaseMissing('points', ['id' => $point->id]);
     });
 
-    it('returns 403 when the point belongs to another user', function () {
+    it('returns 404 when the point belongs to another user, so its existence is not revealed', function () {
         $user = User::factory()->create();
         $otherUser = User::factory()->create();
         $point = Point::factory()->for($otherUser, 'owner')->create();
@@ -534,7 +786,7 @@ describe('destroy', function () {
 
         $response = $this->deleteJson("/api/v1/points/{$point->id}");
 
-        $response->assertForbidden();
+        $response->assertNotFound();
         $this->assertDatabaseHas('points', ['id' => $point->id]);
     });
 

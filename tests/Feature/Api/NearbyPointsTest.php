@@ -301,6 +301,70 @@ describe('nearby', function () {
 
         $this->getJson('/api/v1/points/nearby?lat=45.0&lng=5.0')->assertForbidden();
     });
+
+    it('finds points on every side of the pole when searching from it', function () {
+        $user = User::factory()->create();
+        $sameMeridian = Point::factory()->for($user, 'owner')->create(['latitude' => 89.99, 'longitude' => 0]);
+        $oppositeMeridian = Point::factory()->for($user, 'owner')->create(['latitude' => 89.99, 'longitude' => 180]);
+        Sanctum::actingAs($user);
+
+        $response = $this->getJson('/api/v1/points/nearby?lat=90&lng=0&radius=5');
+
+        $response->assertOk()->assertJsonCount(2, 'data');
+        expect($response->json('data.*.id'))->toEqualCanonicalizing([$sameMeridian->id, $oppositeMeridian->id]);
+    });
+
+    it('finds a point on the other side of the 180th meridian', function () {
+        $user = User::factory()->create();
+        $acrossTheLine = Point::factory()->for($user, 'owner')->create(['latitude' => 0, 'longitude' => -179.99]);
+        Sanctum::actingAs($user);
+
+        $response = $this->getJson('/api/v1/points/nearby?lat=0&lng=179.99&radius=5');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $acrossTheLine->id);
+
+        expect(abs($response->json('data.0.distance_km') - haversineKm(0, 179.99, 0, -179.99)))->toBeLessThan(0.01);
+    });
+
+    it('finds a point at the eastern edge of a large radius at high latitude', function () {
+        $user = User::factory()->create();
+        // 199.5 km from (80, 0), at the longitude where the 200 km circle reaches furthest east:
+        // a bounding box approximated with a flat-Earth formula would cut it off.
+        $edgePoint = Point::factory()->for($user, 'owner')->create(['latitude' => 80.160653, 'longitude' => 10.387195]);
+        Sanctum::actingAs($user);
+
+        $response = $this->getJson('/api/v1/points/nearby?lat=80&lng=0&radius=200');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $edgePoint->id);
+    });
+
+    it('finds a point on the far side of the planet with a radius larger than a quarter of the Earth', function () {
+        $user = User::factory()->create();
+        $sydney = Point::factory()->for($user, 'owner')->create(['latitude' => -33.8688, 'longitude' => 151.2093]);
+        Sanctum::actingAs($user);
+
+        $response = $this->getJson('/api/v1/points/nearby?lat=48.8566&lng=2.3522&radius=19000');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $sydney->id);
+    });
+
+    it('finds points on every side of the South Pole when searching from it', function () {
+        $user = User::factory()->create();
+        $sameMeridian = Point::factory()->for($user, 'owner')->create(['latitude' => -89.99, 'longitude' => 0]);
+        $oppositeMeridian = Point::factory()->for($user, 'owner')->create(['latitude' => -89.99, 'longitude' => 180]);
+        Sanctum::actingAs($user);
+
+        $response = $this->getJson('/api/v1/points/nearby?lat=-90&lng=0&radius=5');
+
+        $response->assertOk()->assertJsonCount(2, 'data');
+        expect($response->json('data.*.id'))->toEqualCanonicalizing([$sameMeridian->id, $oppositeMeridian->id]);
+    });
 });
 
 describe('standard CRUD responses do not leak distance_km', function () {

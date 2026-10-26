@@ -32,7 +32,7 @@ class StorePointRequest extends FormRequest
             'title' => ['nullable', 'string', 'max:255'],
             'latitude' => ['required', 'numeric', 'between:-90,90'],
             'longitude' => ['required', 'numeric', 'between:-180,180'],
-            'note' => ['nullable', 'string'],
+            'note' => ['nullable', 'string', 'max:10000'],
             'status' => ['sometimes', Rule::enum(PointStatus::class)],
             'visited_at' => ['nullable', 'date'],
             'visibility' => ['sometimes', Rule::enum(PointVisibility::class)],

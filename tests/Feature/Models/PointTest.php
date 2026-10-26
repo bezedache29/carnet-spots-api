@@ -51,6 +51,16 @@ it('casts visited_at to a datetime instance', function () {
         ->and($point->visited_at->format('Y-m-d H:i:s'))->toBe('2026-01-15 10:30:00');
 });
 
+it('converts a Carbon visited_at in another timezone to UTC without altering the given instance', function () {
+    $parisTime = Carbon::parse('2026-07-14 21:00:00', 'Europe/Paris');
+
+    $point = Point::factory()->create(['visited_at' => $parisTime]);
+
+    expect($point->getRawOriginal('visited_at'))->toBe('2026-07-14 19:00:00')
+        ->and($point->fresh()->visited_at->toIso8601String())->toBe('2026-07-14T19:00:00+00:00')
+        ->and($parisTime->format('Y-m-d H:i:s e'))->toBe('2026-07-14 21:00:00 Europe/Paris');
+});
+
 it('allows visited_at to be null', function () {
     $point = Point::factory()->create(['visited_at' => null]);
 
