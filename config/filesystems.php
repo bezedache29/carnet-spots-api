@@ -47,6 +47,18 @@ return [
             'report' => false,
         ],
 
+        // Regional `.pmtiles` map files downloaded by the mobile client (README 5.1). Never served
+        // directly: GET /api/v1/tiles/{tile} checks the token first. When `x_accel_redirect` is set
+        // (production image, see docker/nginx.conf), Laravel hands the file over to Nginx through that
+        // internal location instead of streaming it from PHP.
+        'tiles' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/tiles'),
+            'x_accel_redirect' => env('TILES_X_ACCEL_REDIRECT'),
+            'throw' => false,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

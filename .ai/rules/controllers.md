@@ -3,6 +3,7 @@ paths:
   - 'app/Http/Controllers/**'
   - app/Http/Controllers/PointController.php
   - app/Http/Controllers/SyncController.php
+  - app/Http/Controllers/TileController.php
 ---
 
 # Controllers
@@ -49,3 +50,6 @@ The opposite holds for tags: renaming or deleting a tag must NOT touch its point
 
 ## Sync cursor: server time minus a margin, rounded down, compared with >=
 `server_time` is captured before reading, moved back by `SyncController::SERVER_TIME_MARGIN_SECONDS` (a row's `updated_at` is computed in PHP before its commit, so it can become visible after a sync already handed out a later cursor) and rounded down to the second (DB timestamps have no fractions); rows are selected with `updated_at >= since` (withTrashed) so nothing changed in the same second is missed — duplicates are fine, the client upserts. Convert `since` to the app timezone before querying: the query builder binds Carbon without timezone conversion.
+
+## Map tiles: auth in Laravel, bytes from Nginx
+`.pmtiles` files live on the `tiles` disk (storage/app/private/tiles, a Coolify persistent volume, never in Git). Never move them to `public/`: downloads must stay behind auth:sanctum + verified. In production `TILES_X_ACCEL_REDIRECT` (Dockerfile ENV) makes `show()` answer an `X-Accel-Redirect` to the `internal` location `/_protected-tiles/` in docker/nginx.conf — keep the prefix, the alias path and the disk root in sync. Keep the `[A-Za-z0-9_-]+` route constraint on `{tile}`: the parameter becomes a file path.
